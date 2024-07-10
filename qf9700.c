@@ -415,7 +415,7 @@ static int qf9700_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 
 static struct sk_buff *qf9700_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t flags)
 {
-	int len;
+	int len, pad;
 
 	/* format:
 	   b0: packet length low
@@ -423,9 +423,17 @@ static struct sk_buff *qf9700_tx_fixup(struct usbnet *dev, struct sk_buff *skb, 
 	   b3..n: packet data
 	*/
 
-	len = skb->len;
+	len = skb->len + QF_TX_OVERHEAD;
 
-	if (skb_headroom(skb) < QF_TX_OVERHEAD) {
+	/* workaround for dm962x errata with tx fifo getting out of
+	 * sync if a USB bulk transfer retry happens right after a
+	 * packet with odd / maxpacket length by adding up to 3 bytes
+	 * padding.
+	 */
+	while ((len & 1) || !(len % dev->maxpacket))
+		len++;
+
+	if (skb_headroom(skb) < QF_TX_OVERHEAD || skb_tailroom(skb) < pad) {
 		struct sk_buff *skb2;
 
 		skb2 = skb_copy_expand(skb, QF_TX_OVERHEAD, 0, flags);
@@ -437,10 +445,10 @@ static struct sk_buff *qf9700_tx_fixup(struct usbnet *dev, struct sk_buff *skb, 
 
 	__skb_push(skb, QF_TX_OVERHEAD);
 
-	/* usbnet adds padding if length is a multiple of packet size
-	   if so, adjust length value in header */
-	if ((skb->len % dev->maxpacket) == 0)
-		len++;
+	if (pad) {
+		memset(skb->data + skb->len, 0, pad);
+		__skb_put(skb, pad);
+	}
 
 	skb->data[0] = len;
 	skb->data[1] = len >> 8;
