@@ -62,70 +62,20 @@ static int qf_write_reg(struct usbnet *dev, u8 reg, u8 value)
 	return usbnet_write_cmd(dev, QF_WR_REG, QF_REQ_WR_REG, value, reg, NULL, 0);
 }
 
-/* async mode for writing registers or reg blocks */
-static void qf_write_async_callback(struct urb *urb)
-{
-	struct usb_ctrlrequest *req = (struct usb_ctrlrequest *)urb->context;
-
-	if (urb->status < 0)
-		printk(KERN_DEBUG "qf_write_async_callback() failed with %d\n", urb->status);
-
-	kfree(req);
-	usb_free_urb(urb);
-}
-
-static void qf_write_async_helper(struct usbnet *dev, u8 reg, u8 value, u16 length, void *data)
-{
-	struct usb_ctrlrequest *req;
-	struct urb *urb;
-	int status;
-
-	urb = usb_alloc_urb(0, GFP_ATOMIC);
-	if (!urb) {
-		netdev_warn(dev->net,"Error allocating URB in qf_write_async_helper!");
-		return;
-	}
-
-	req = kmalloc(sizeof(struct usb_ctrlrequest), GFP_ATOMIC);
-	if (!req) {
-		netdev_warn(dev->net,"Failed to allocate memory for control request");
-		usb_free_urb(urb);
-		return;
-	}
-
-	req->bRequestType = QF_REQ_WR_REG;
-	req->bRequest = length ? QF_WR_REGS : QF_WR_REG;
-	req->wValue = cpu_to_le16(value);
-	req->wIndex = cpu_to_le16(reg);
-	req->wLength = cpu_to_le16(length);
-
-	usb_fill_control_urb(urb, dev->udev, usb_sndctrlpipe(dev->udev, 0),
-			     (void *)req, data, length,
-			     qf_write_async_callback, req);
-
-	status = usb_submit_urb(urb, GFP_ATOMIC);
-	if (status < 0) {
-		netdev_warn(dev->net, "Error submitting the control message: status=%d",
-		       status);
-		kfree(req);
-		usb_free_urb(urb);
-	}
-
-	return;
-}
-
 static void qf_write_async(struct usbnet *dev, u8 reg, u16 length, void *data)
 {
 	netdev_dbg(dev->net,"qf_write_async() reg=0x%02x length=%d", reg, length);
 
-	qf_write_async_helper(dev, reg, 0, length, data);
+	// qf_write_async_helper(dev, reg, 0, length, data);
+	usbnet_write_cmd_async(dev, QF_WR_REGS, QF_REQ_WR_REG, 0, reg, data, length);
 }
 
 static void qf_write_reg_async(struct usbnet *dev, u8 reg, u8 value)
 {
 	netdev_dbg(dev->net, "qf_write_reg_async() reg=0x%02x value=0x%02x", reg, value);
 
-	qf_write_async_helper(dev, reg, value, 0, NULL);
+	// qf_write_async_helper(dev, reg, value, 0, NULL);
+	usbnet_write_cmd_async(dev, QF_WR_REG, QF_REQ_WR_REG, 0, reg, NULL, 0);
 }
 
 /* qf9700 read one word from phy or eeprom  */
