@@ -272,41 +272,57 @@ static void qf9700_set_multicast(struct net_device *net)
 	if (net->flags & IFF_PROMISC) {
 		rx_ctl |= 0x02;
 	} else if (net->flags & IFF_ALLMULTI || netdev_mc_count(net) > QF_MCAST_MAX) {
-		rx_ctl |= 0x04;
-        } else if (netdev_mc_empty(net)) {
-                /* just broadcast and directed */
-        } else { 
-                /* We use the 20 byte dev->data
-                 * for our 8 byte filter buffer
-                 * to avoid allocating memory that
-                 * is tricky to free later */
-                struct netdev_hw_addr *ha;
-                u32 crc_bits;
+		rx_ctl |= 0x08;
+	} else if (!netdev_mc_empty(net)) {
+		/* We use the 20 byte dev->data
+		* for our 8 byte filter buffer
+		* to avoid allocating memory that
+		* is tricky to free later */
+		struct netdev_hw_addr *ha;
 
-                memset(hashes, 0, QF_MCAST_SIZE);
-
-                /* Build the multicast hash filter. */
-                netdev_for_each_mc_addr(ha, net) {
-                        crc_bits = ether_crc(ETH_ALEN, ha->addr) >> 26;
-                        hashes[crc_bits >> 3] |=
-                            1 << (crc_bits & 7);
-                }
-
+		netdev_for_each_mc_addr(ha, net) {
+			u32 crc = ether_crc(ETH_ALEN, ha->addr) >> 26;
+			hashes[crc >> 3] |= 1 << (crc & 0x7);
+		}
 	}
 
 	qf_write_async(dev, MAR, QF_MCAST_SIZE, hashes);
 	qf_write_reg_async(dev, RCR, rx_ctl);
 }
+
+static void __qf9700_set_mac_address(struct usbnet *dev)
+{
+	qf_write_async(dev, QF_PHY_ADDR, ETH_ALEN, dev->net->dev_addr);
+}
+
+static int qf9700_set_mac_address(struct net_device *net, void *p)
+{
+	struct sockaddr *addr = p;
+	struct usbnet *dev = netdev_priv(net);
+
+	if (!is_valid_ether_addr(addr->sa_data)) {
+		dev_err(&net->dev, "not setting invalid mac address %pM\n",
+								addr->sa_data);
+		return -EINVAL;
+	}
+
+	memcpy(net->dev_addr, addr->sa_data, net->addr_len);
+	__qf9700_set_mac_address(dev);
+
+	return 0;
+}
+
 static const struct net_device_ops qf9700_netdev_ops = {
-	.ndo_open		= usbnet_open,
-	.ndo_stop		= usbnet_stop,
-	.ndo_start_xmit		= usbnet_start_xmit,
-	.ndo_tx_timeout		= usbnet_tx_timeout,
-	.ndo_change_mtu		= usbnet_change_mtu,
-	.ndo_set_mac_address 	= eth_mac_addr,
-	.ndo_validate_addr	= eth_validate_addr,
-	.ndo_do_ioctl		= qf9700_ioctl,
-	.ndo_set_rx_mode = qf9700_set_multicast,
+	.ndo_open				= usbnet_open,
+	.ndo_stop				= usbnet_stop,
+	.ndo_start_xmit			= usbnet_start_xmit,
+	.ndo_tx_timeout			= usbnet_tx_timeout,
+	.ndo_change_mtu			= usbnet_change_mtu,
+	.ndo_get_stats64	= usbnet_get_stats64,
+	.ndo_validate_addr		= eth_validate_addr,
+	.ndo_do_ioctl			= qf9700_ioctl,
+	.ndo_set_rx_mode 		= qf9700_set_multicast,
+	.ndo_set_mac_address	= qf9700_set_mac_address,
 };
 
 static int qf9700_bind(struct usbnet *dev, struct usb_interface *intf)
@@ -317,11 +333,16 @@ static int qf9700_bind(struct usbnet *dev, struct usb_interface *intf)
 	if (ret)
 		goto out;
 
-        dev->net->netdev_ops = &qf9700_netdev_ops;
+	dev->net->netdev_ops = &qf9700_netdev_ops;
 	dev->net->ethtool_ops = &qf9700_ethtool_ops;
 	dev->net->hard_header_len += QF_TX_OVERHEAD;
 	dev->hard_mtu = dev->net->mtu + dev->net->hard_header_len;
-	dev->rx_urb_size = dev->net->mtu + ETH_HLEN + QF_RX_OVERHEAD;
+
+	/* dm9620/21a require room for 4 byte padding, even in dm9601
+	 * mode, so we need +1 to be able to receive full size
+	 * ethernet frames.
+	 */
+	dev->rx_urb_size = dev->net->mtu + ETH_HLEN + QF_RX_OVERHEAD + 1;
 
 	dev->mii.dev = dev->net;
 	dev->mii.mdio_read = qf9700_mdio_read;
@@ -342,20 +363,8 @@ static int qf9700_bind(struct usbnet *dev, struct usb_interface *intf)
 
 	/* power up and reset phy */
 	qf_write_reg(dev, PRR, 1);
-	
-	udelay(2000);	// at least 10ms, here 20ms for safe
-udelay(2000);
-udelay(2000);
-udelay(2000);
-udelay(2000);
-udelay(2000);
-udelay(2000);
-udelay(2000);
-udelay(2000);
-udelay(2000);
-
 	qf_write_reg(dev, PRR, 0);
-	udelay(2000);	// at least 1ms, here 2ms for reading right register
+	// udelay(2000);	// at least 1ms, here 2ms for reading right register
 
 	/* receive broadcast packets */
 	qf9700_set_multicast(dev->net);

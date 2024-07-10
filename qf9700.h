@@ -146,6 +146,7 @@
 #define	QF_SHARE_TIMEOUT	1000
 #define	QF_EEPROM_LEN		256
 #define	QF_MCAST_SIZE		8
+#define	QF_PHY_ADDR		    10
 #define	QF_MCAST_MAX		64
 #define	QF_TX_OVERHEAD		2	// 2bytes header
 #define	QF_RX_OVERHEAD		7	// 3bytes header + 4crc tail
