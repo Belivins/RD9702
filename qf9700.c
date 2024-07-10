@@ -30,50 +30,11 @@
 /* qf9700 read some registers from MAC */
 static int qf_read(struct usbnet *dev, u8 reg, u16 length, void *data)
 {
-	void *buf;
-	int err = -ENOMEM;
+	int err = usbnet_read_cmd(dev, QF_RD_REGS, QF_REQ_RD_REG, 0, reg, data, length);
 
-	netdev_dbg(dev->net, "qf_read() reg=0x%02x length=%d", reg, length);
-
-	buf = kmalloc(length, GFP_KERNEL);
-	if (!buf)
-		goto out;
-
-	err = usb_control_msg(dev->udev, usb_rcvctrlpipe(dev->udev, 0), 
-				QF_RD_REGS, QF_REQ_RD_REG,
-			    0, reg, buf, length, USB_CTRL_SET_TIMEOUT);
-	if (err == length)
-		memcpy(data, buf, length);
-	else if (err >= 0)
+	if(err != length && err >= 0)
 		err = -EINVAL;
-	kfree(buf);
 
- out:
-	return err;
-}
-
-/* qf9700 write some registers to MAC */
-static int qf_write(struct usbnet *dev, u8 reg, u16 length, void *data)
-{
-	void *buf = NULL;
-	int err = -ENOMEM;
-
-	netdev_dbg(dev->net,"qf_write() reg=0x%02x, length=%d", reg, length);
-
-	if (data) {
-		buf = kmalloc(length, GFP_KERNEL);
-		if (!buf)
-			goto out;
-		memcpy(buf, data, length);
-	}
-
-	err = usb_control_msg(dev->udev, usb_sndctrlpipe(dev->udev, 0),
-			      QF_WR_REGS, QF_REQ_WR_REG,
-			      0, reg, buf, length, USB_CTRL_SET_TIMEOUT);
-	kfree(buf);
-	if (err >= 0 && err < length)
-		err = -EINVAL;
- out:
 	return err;
 }
 
@@ -83,13 +44,22 @@ static int qf_read_reg(struct usbnet *dev, u8 reg, u8 *value)
 	return qf_read(dev, reg, 1, value);
 }
 
+/* qf9700 write some registers to MAC */
+static int qf_write(struct usbnet *dev, u8 reg, u16 length, void *data)
+{
+	int err = usbnet_write_cmd(dev, QF_WR_REGS, QF_REQ_WR_REG, 0, reg, data, length);
+
+	if (err >= 0 && err < length)
+		err = -EINVAL;
+
+	return err;
+}
+
 /* qf9700 write one register to MAC */
 static int qf_write_reg(struct usbnet *dev, u8 reg, u8 value)
 {
 	netdev_dbg(dev->net,"qf_write_reg() reg=0x%02x, value=0x%02x", reg, value);
-	return usb_control_msg(dev->udev, usb_sndctrlpipe(dev->udev, 0),
-			       QF_WR_REG, QF_REQ_WR_REG,
-			       value, reg, NULL, 0, USB_CTRL_SET_TIMEOUT);
+	return usbnet_write_cmd(dev, QF_WR_REG, QF_REQ_WR_REG, value, reg, NULL, 0);
 }
 
 /* async mode for writing registers or reg blocks */
