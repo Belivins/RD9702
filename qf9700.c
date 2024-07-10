@@ -335,8 +335,8 @@ static struct ethtool_ops qf9700_ethtool_ops = {
 	.set_msglevel	= usbnet_set_msglevel,
 	.get_eeprom_len	= qf9700_get_eeprom_len,
 	.get_eeprom	= qf9700_get_eeprom,
-	.get_settings	= usbnet_get_settings,
-	.set_settings	= usbnet_set_settings,
+	.get_link_ksettings	= usbnet_get_link_ksettings,
+	.set_link_ksettings	= usbnet_set_link_ksettings,
 	.nway_reset	= usbnet_nway_reset,
 };
 
