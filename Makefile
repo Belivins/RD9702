@@ -26,6 +26,10 @@ delete:
 	depmod 
 	modprobe usbnet
 
+debug:
+	modprobe -r $(MODULE_NAME)
+	modprobe $(MODULE_NAME) dyndbg
+
 clean:
 	-rm -f *.o *.ko .*.cmd .*.flags .mii.mod.o.d *.mod* Module.symvers Module.markers modules.order version.h
 	-rm -rf .tmp_versions
