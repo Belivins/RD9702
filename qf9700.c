@@ -479,19 +479,20 @@ static void qf9700_status(struct usbnet *dev, struct urb *urb)
 
 	link = !!(buf[0] & 0x40);
 	if (netif_carrier_ok(dev->net) != link) {
+		// Problem place
 		if (link) {
 			netif_carrier_on(dev->net);
 			usbnet_defer_kevent (dev, EVENT_LINK_RESET);
 		}
 		else
-			netif_carrier_off(dev->net);
-		netdev_dbg(dev->net, "Link Status is: %d", link);
+			// netif_carrier_off(dev->net); Still link down
+			netdev_dbg(dev->net, "Link Status is: %d", link);
 	}
 }
 
 static int qf9700_link_reset(struct usbnet *dev)
 {
-	struct ethtool_cmd ecmd;
+	struct ethtool_cmd ecmd  = { .cmd = ETHTOOL_GSET }; 
 
 	mii_check_media(&dev->mii, 1, 1);
 	mii_ethtool_gset(&dev->mii, &ecmd);
@@ -504,7 +505,7 @@ static int qf9700_link_reset(struct usbnet *dev)
 
 static const struct driver_info qf9700_info = {
 	.description	= "QF9700 USB Ethernet",
-	.flags		= FLAG_ETHER,
+	.flags		= FLAG_ETHER | FLAG_LINK_INTR, // Still down
 	.bind		= qf9700_bind,
 	.rx_fixup	= qf9700_rx_fixup,
 	.tx_fixup	= qf9700_tx_fixup,
@@ -534,20 +535,10 @@ static struct usb_driver qf9700_driver = {
 	.disconnect = usbnet_disconnect,
 	.suspend = usbnet_suspend,
 	.resume = usbnet_resume,
+	.disable_hub_initiated_lpm = 1,
 };
 
-static int __init qf9700_init(void)
-{
-	return usb_register(&qf9700_driver);
-}
-
-static void __exit qf9700_exit(void)
-{
-	usb_deregister(&qf9700_driver);
-}
-
-module_init(qf9700_init);
-module_exit(qf9700_exit);
+module_usb_driver(qf9700_driver);
 
 MODULE_AUTHOR("jokeliu <jokeliu@163.com>");
 MODULE_DESCRIPTION("QF9700 one chip USB 1.1 ethernet devices");
