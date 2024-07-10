@@ -66,7 +66,6 @@ static void qf_write_async(struct usbnet *dev, u8 reg, u16 length, void *data)
 {
 	netdev_dbg(dev->net,"qf_write_async() reg=0x%02x length=%d", reg, length);
 
-	// qf_write_async_helper(dev, reg, 0, length, data);
 	usbnet_write_cmd_async(dev, QF_WR_REGS, QF_REQ_WR_REG, 0, reg, data, length);
 }
 
@@ -74,7 +73,6 @@ static void qf_write_reg_async(struct usbnet *dev, u8 reg, u8 value)
 {
 	netdev_dbg(dev->net, "qf_write_reg_async() reg=0x%02x value=0x%02x", reg, value);
 
-	// qf_write_async_helper(dev, reg, value, 0, NULL);
 	usbnet_write_cmd_async(dev, QF_WR_REG, QF_REQ_WR_REG, 0, reg, NULL, 0);
 }
 
@@ -231,7 +229,7 @@ static void qf9700_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *i
 {
 	/* Inherit standard device info */
 	usbnet_get_drvinfo(net, info);
-	info->eedump_len = QF_EEPROM_LEN;
+	// info->eedump_len = QF_EEPROM_LEN;
 }
 
 static u32 qf9700_get_link(struct net_device *net)
@@ -250,14 +248,14 @@ static int qf9700_ioctl(struct net_device *net, struct ifreq *rq, int cmd)
 
 static struct ethtool_ops qf9700_ethtool_ops = {
 	.get_drvinfo	= qf9700_get_drvinfo,
-	.get_link	= qf9700_get_link,
+	.get_link		= qf9700_get_link,
 	.get_msglevel	= usbnet_get_msglevel,
 	.set_msglevel	= usbnet_set_msglevel,
 	.get_eeprom_len	= qf9700_get_eeprom_len,
-	.get_eeprom	= qf9700_get_eeprom,
+	.get_eeprom		= qf9700_get_eeprom,
+	.nway_reset		= usbnet_nway_reset,
 	.get_link_ksettings	= usbnet_get_link_ksettings,
 	.set_link_ksettings	= usbnet_set_link_ksettings,
-	.nway_reset	= usbnet_nway_reset,
 };
 
 static void qf9700_set_multicast(struct net_device *net)
