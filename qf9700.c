@@ -22,7 +22,7 @@
 #include <linux/usb.h>
 #include <linux/crc32.h>
 #include <linux/usb/usbnet.h>
-
+#include <linux/mii.h> // for mdio_read
 #include "qf9700.h"
 
 /* ------------------------------------------------------------------------------------------ */
@@ -33,6 +33,19 @@ static int qf_read(struct usbnet *dev, u8 reg, u16 length, void *data)
 	int err = usbnet_read_cmd(dev, QF_RD_REGS, QF_REQ_RD_REG, 0, reg, data, length);
 
 	if(err != length && err >= 0)
+		err = -EINVAL;
+
+	return err;
+}
+
+static int sr_read_cmd(struct usbnet *dev, u8 cmd, u16 value, u16 index,
+			    u16 size, void *data)
+{
+	int err;
+
+	err = usbnet_read_cmd(dev, cmd, QF_REQ_RD_REG, value, index,
+			      data, size);
+	if ((err != size) && (err >= 0))
 		err = -EINVAL;
 
 	return err;
@@ -130,7 +143,7 @@ static int qf_share_write_word(struct usbnet *dev, int phy, u8 reg, __le16 value
 	qf_write_reg(dev, EPAR, phy ? (reg | 0x40) : reg);
 	qf_write_reg(dev, EPCR, phy ? 0x1a : 0x12);
 
-	for (i = 0; i < QF_SHARE_TIMEOUT; i++) {
+	for (i = 0; i < QF_SHARE_TIMEOUT*10; i++) {
 		u8 tmp;
 
 		udelay(1);
@@ -143,7 +156,7 @@ static int qf_share_write_word(struct usbnet *dev, int phy, u8 reg, __le16 value
 			break;
 	}
 
-	if (i >= QF_SHARE_TIMEOUT) {
+	if (i >= QF_SHARE_TIMEOUT * 10) {
 		netdev_warn(dev->net,"%s write timed out!", phy ? "phy" : "eeprom");
 		ret = -EIO;
 		goto out;
@@ -224,12 +237,104 @@ static void qf9700_mdio_write(struct net_device *netdev, int phy_id, int loc, in
 }
 
 /*-------------------------------------------------------------------------------------------*/
+// Dump EEPROM and PHY Address Register
+static void dump_epar(struct net_device *net)
+{
+	struct usbnet *dev = netdev_priv(net);
+
+	struct NSR_DATA {
+		unsigned int RESERVED:1;
+		unsigned int REEP:1;
+		unsigned int WEP:1;
+		unsigned int EPOS:1;
+		unsigned int tx2end:1;
+		unsigned int txend:1;
+		unsigned int pxov:1;
+		unsigned int rxrdy:1;
+	} nsr_d;
+}
+
+// Dump Network Control Register
+static void dump_ncr(struct net_device *net)
+{
+	struct usbnet *dev = netdev_priv(net);
+
+	struct NCR_DATA {
+		unsigned int EXT_PHY:1;
+		unsigned int WAKEEN:1;
+		unsigned int RESERVED:1;
+		unsigned int FCOL:1;
+		unsigned int FDX:1;
+		unsigned int LBK:2;
+		unsigned int RST:1;
+	} ncr_d;
+
+	qf_read(dev, NCR, sizeof(ncr_d), &ncr_d);
+	netdev_warn( dev->net,"EXT_PHY: %d, WAKEEN: %d, FCOL: %d, FDX: %d, LBK: %d %d, RST: %d",
+		ncr_d.EXT_PHY, ncr_d.WAKEEN, ncr_d.FCOL, ncr_d.FDX, ncr_d.LBK >> 1, ncr_d.LBK & 2, ncr_d.RST);
+}
+
+// Dump MAC Address Register
+static void dump_mac(struct net_device *net)
+{
+	struct usbnet *dev = netdev_priv(net);
+	unsigned char addr[MAX_ADDR_LEN];
+
+	qf_read(dev, PAR, ETH_ALEN, &addr);
+	netdev_warn( dev->net,"MAC: %02x %02x %02x %02x %02x %02x", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+}
+
+// Dump Basic Mode Control Register (BMCR)
+static void dump_mii_bmcr(struct net_device *net)
+{
+	struct usbnet *dev = netdev_priv(net);
+
+	struct BMCR_DATA {
+		unsigned int Reset:1;
+		unsigned int Loopback:1;
+		unsigned int Speed:1;
+		unsigned int Auto_neg:1;
+		unsigned int Power:1;
+		unsigned int Isolate:1;
+		unsigned int Restart_auto_neg:1;
+		unsigned int Duplex:1;
+		unsigned int Collision:1;
+		unsigned int RESERVED:6;
+	} bmcr_d;
+
+	qf_read(dev, MII_BMCR, 2, &bmcr_d);
+	// __le16 value = qf9700_mdio_read(dev->net, dev->mii.phy_id, MII_BMCR);
+	// memcpy(&bmcr_d, &value, sizeof(value));
+	// netdev_warn(dev->net, "dump_bmcr() value: %d", value);
+	netdev_warn(dev->net,
+		"R: %d, L: %d, S: %d, A: %d, P: %d, I: %d, RA: %d, D: %d, C: %d",
+			bmcr_d.Reset, bmcr_d.Loopback, bmcr_d.Speed, bmcr_d.Auto_neg, bmcr_d.Power,
+				bmcr_d.Isolate, bmcr_d.Restart_auto_neg, bmcr_d.Duplex, bmcr_d.Collision);
+}
 
 static void qf9700_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *info)
 {
+	// // __le16 value;
+	struct usbnet *dev = netdev_priv(net);
+	// struct VID_DATA{
+	// 	unsigned int vidh:8;
+	// 	unsigned int vidl:8;
+	// }vid_data;
+	// __le16 value;
+
+	// dump_mac(net);
+	// dump_ncr(net);
+	dump_mii_bmcr(net);
+
+	// // mii_bmcr.speed = 1;
+	// qf9700_mdio_write(dev->net, dev->mii.phy_id, MII_BMCR, 1 << 12);
+
+	// dump_mii_bmcr(net);
+
 	/* Inherit standard device info */
 	usbnet_get_drvinfo(net, info);
-	// info->eedump_len = QF_EEPROM_LEN;
+
+	info->eedump_len = QF_EEPROM_LEN;
 }
 
 static u32 qf9700_get_link(struct net_device *net)
@@ -342,6 +447,7 @@ static int qf9700_bind(struct usbnet *dev, struct usb_interface *intf)
 	 * mode, so we need +1 to be able to receive full size
 	 * ethernet frames.
 	 */
+
 	dev->rx_urb_size = dev->net->mtu + ETH_HLEN + QF_RX_OVERHEAD + 1;
 
 	dev->mii.dev = dev->net;
@@ -351,8 +457,21 @@ static int qf9700_bind(struct usbnet *dev, struct usb_interface *intf)
 	dev->mii.reg_num_mask = 0x1f;
 
 	/* reset the qf9700 */
-	qf_write_reg(dev, NCR, 1);
+	// qf_write_reg(dev, NCR, 1);
 	udelay(20);
+
+	unsigned char addr[QF_EEPROM_LEN];
+	memset(&addr,0xff,QF_EEPROM_LEN);
+
+	udelay(2000);
+	sr_read_cmd(dev, 0x0b, 0, 0, QF_EEPROM_LEN, addr);
+	// qf_read(dev, 32, 32, &addr[32]);
+	int i;
+	for(i = 0; i < QF_EEPROM_LEN; i+=8)
+	{	
+		netdev_warn( dev->net,"%04x: %02x %02x %02x %02x %02x %02x %02x %02x",
+			i, addr[i], addr[i+1], addr[i+2], addr[i+3], addr[i+4], addr[i+5], addr[i+6], addr[i+7]);
+	}
 
 	/* read MAC */
 	if (qf_read(dev, PAR, ETH_ALEN, dev->net->dev_addr) < 0) {
@@ -505,13 +624,13 @@ static int qf9700_link_reset(struct usbnet *dev)
 
 static const struct driver_info qf9700_info = {
 	.description	= "QF9700 USB Ethernet",
-	.flags		= FLAG_ETHER | FLAG_LINK_INTR, // Still down
-	.bind		= qf9700_bind,
-	.rx_fixup	= qf9700_rx_fixup,
-	.tx_fixup	= qf9700_tx_fixup,
-	.status		= qf9700_status,
-	.link_reset	= qf9700_link_reset,
-	.reset		= qf9700_link_reset,
+	.flags			= FLAG_ETHER, //| FLAG_LINK_INTR, // Still down
+	.bind			= qf9700_bind,
+	.rx_fixup		= qf9700_rx_fixup,
+	.tx_fixup		= qf9700_tx_fixup,	
+	.status			= qf9700_status,
+	// .link_reset		= qf9700_link_reset,
+	.reset			= qf9700_link_reset,
 };
 
 static const struct usb_device_id products[] = {

@@ -12,7 +12,7 @@ all:
 
 install:
 	@echo "install chip driver $(MODULE_NAME) ..."
-	make delete
+	-make delete 
 	cp -f $(ko-file) $(KERNEL_DRVIVERS_NET_USB)$(ko-file)
 	depmod
 	modprobe usbnet
